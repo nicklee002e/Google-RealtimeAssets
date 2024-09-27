@@ -1,0 +1,430 @@
+function fetchTokenBalance(walletAddress, tokenAddress, network) {
+  if (!walletAddress || !tokenAddress || !network) {
+    Logger.log('Error: Missing required parameters for fetchTokenBalance');
+    Logger.log('Wallet Address: ' + walletAddress);
+    Logger.log('Token Address: ' + tokenAddress);
+    Logger.log('Network: ' + network);
+    return 0;
+  }
+
+  var apiKey = network === 'polygon' ? 'F4UH333TIV3R83KRCGMTWY3K5FB7WQM6MI' : 'C4Q5DK3J23UQXRGZSB9DQ7NWVRV5S3UACN';
+  var apiUrl = network === 'polygon' 
+    ? 'https://api.polygonscan.com/api'
+    : 'https://api.bscscan.com/api';
+
+  var url = apiUrl + '?module=account&action=tokenbalance&contractaddress=' + tokenAddress + '&address=' + walletAddress + '&tag=latest&apikey=' + apiKey;
+  
+  try {
+    var response = UrlFetchApp.fetch(url);
+    var data = JSON.parse(response.getContentText());
+    
+    if (data.status === '1') {
+      var balance = parseInt(data.result) / 1e18;
+      return balance;
+    } else {
+      Logger.log('Error fetching token balance: ' + data.message + ' for ' + walletAddress + ' on ' + network);
+      Logger.log('Response: ' + response.getContentText());
+      return 0;
+    }
+  } catch (e) {
+    Logger.log('Exception when fetching token balance: ' + e.message + ' for ' + walletAddress + ' on ' + network);
+    return 0;
+  }
+}
+
+function fetchBalances(wallets, tokenAddress, network) {
+  var balances = [];
+  
+  // Log the input parameters for debugging
+  Logger.log('fetchBalances input:');
+  Logger.log('Token Address: ' + tokenAddress);
+  Logger.log('Network: ' + network);
+  
+  if (!Array.isArray(wallets) || wallets.length === 0) {
+    Logger.log('Error: Invalid or empty wallets array');
+    return balances;
+  }
+
+  if (!tokenAddress) {
+    Logger.log('Error: Missing tokenAddress');
+    return balances;
+  }
+
+  if (!network) {
+    Logger.log('Error: Missing network');
+    return balances;
+  }
+
+  for (let i = 0; i < wallets.length; i++) {
+    let wallet = wallets[i];
+    if (!wallet || !isValidEthereumAddress(wallet)) {
+      Logger.log('Error: Invalid wallet address at index ' + i + ': ' + wallet);
+      balances.push(0);
+      continue;
+    }
+
+    let balance = fetchTokenBalance(wallet, tokenAddress, network);
+    balances.push(balance);
+
+    // Add a delay between requests to avoid rate limiting
+    if (i < wallets.length - 1) {
+      Utilities.sleep(200); // Wait for 200ms between requests
+    }
+  }
+  
+  return balances;
+}
+
+function fetchMaxTotalSupply(tokenAddress, network) {
+  var apiKey = network === 'polygon' ? 'F4UH333TIV3R83KRCGMTWY3K5FB7WQM6MI' : 'C4Q5DK3J23UQXRGZSB9DQ7NWVRV5S3UACN';
+  var apiUrl = network === 'polygon' 
+    ? 'https://api.polygonscan.com/api'
+    : 'https://api.bscscan.com/api';
+
+  var url = apiUrl + '?module=stats&action=tokensupply&contractaddress=' + tokenAddress + '&apikey=' + apiKey;
+  
+  try {
+    var response = UrlFetchApp.fetch(url);
+    var data = JSON.parse(response.getContentText());
+    
+    if (data.status === '1') {
+      var supply = parseInt(data.result) / 1e18;
+      return supply;
+    } else {
+      Logger.log('Error fetching max total supply: ' + data.message + ' for ' + network);
+      Logger.log('Response: ' + response.getContentText());
+      return null;
+    }
+  } catch (e) {
+    Logger.log('Exception when fetching max total supply: ' + e.message + ' for ' + network);
+    return null;
+  }
+}
+
+function fetchTotalStaked(contractAddress, network) {
+  if (!contractAddress || !network) {
+    Logger.log('Error: Missing required parameters for fetchTotalStaked');
+    Logger.log('Contract Address: ' + contractAddress);
+    Logger.log('Network: ' + network);
+    return 0;
+  }
+
+  var apiKey = network === 'polygon' ? 'F4UH333TIV3R83KRCGMTWY3K5FB7WQM6MI' : 'C4Q5DK3J23UQXRGZSB9DQ7NWVRV5S3UACN';
+  var apiUrl = network === 'polygon' 
+    ? 'https://api.polygonscan.com/api'
+    : 'https://api.bscscan.com/api';
+
+  // The function signature for 'totalStaked()' in hex
+  var functionSignature = '0x817b1cd2';
+  
+  var url = apiUrl + '?module=proxy&action=eth_call&to=' + contractAddress + '&data=' + functionSignature + '&tag=latest&apikey=' + apiKey;
+  
+  try {
+    var response = UrlFetchApp.fetch(url);
+    var data = JSON.parse(response.getContentText());
+    
+    if (data.result) {
+      // Convert the hex result to a decimal number and divide by 1e18 (assuming 18 decimal places)
+      var totalStaked = parseInt(data.result, 16) / 1e18;
+      return totalStaked;
+    } else {
+      Logger.log('Error fetching total staked: ' + data.message + ' for ' + contractAddress + ' on ' + network);
+      Logger.log('Response: ' + response.getContentText());
+      return 0;
+    }
+  } catch (e) {
+    Logger.log('Exception when fetching total staked: ' + e.message + ' for ' + contractAddress + ' on ' + network);
+    return 0;
+  }
+}
+
+function isValidEthereumAddress(address) {
+  return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+function listGnosisWalletBalances() {
+  var doc = DocumentApp.getActiveDocument();
+  var body = doc.getBody();
+  
+  // Get current date and time
+  var now = new Date();
+  var dateString = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  var timeString = Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm:ss');
+  
+  // Add title with current date and time
+  var title = 'Official Assets as of ' + dateString + ' ' + timeString;
+  
+  // Insert the title at the beginning of the document
+  var titleParagraph = body.insertParagraph(0, title);
+  titleParagraph.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  
+  // Initialize the insertion index
+  var insertIndex = 1;
+  
+  // Define your wallet addresses here
+  var gnosisWallets = {
+    "CREPE Reward (Staking Reward)": "0x7377F970514F63De3b28059d6bB7139B265258c6",
+    "Community (Marketing & Airdrops)": "0xC9C7975FeCEA168730CD2d2b526681BDD53181Dc",
+    "DAO Reserve": "0x33eea37535d1a6b991D2CcF7231a17Dc29A4cAbd",
+    "Future Development": "0x5F08B09b6789c7D2f6d7B5c3576BA886cc04F7c1",
+    "Private Sale": "0xCF0b09549A539e6fde41eB18196A1cdca7B28c79",
+    "Presale": "0x5EAb29D687471C19885ae426a870395149715857",
+    "IDO": "0x97438Dc0409ba0c22155Ff74e1520fD416324B1a",
+    "Founders": "0x5C3935080569e27FBecc57A99D018f91D5223464",
+    "Early Contributors": "0xa393D1aC122e2d778147a4F94e9a58f2B091Febb",
+    "Expenses-1": "0x99D657B79C79e66F7452797028e6d76e7A6F12b9",
+    "Salary & Compensation": "0x8A3162C4a55E1558E88B9835F99d01Ec1Ae1E950",
+    "Expenses-2": "0x0D831c7872AF7194d9aAB354a004683B099dba4d",
+    "Treasury": "0x08cb7324D0215BD9b8de62fC76673c3dC4151660",
+    "Others": "0x5fAE0862F51547BE0F1A161C72bb14AddaE6d89e"
+  };
+  
+  var polygonContractWallets = {
+    "CRE Staking": "0x3815e21EE740Fa81E80a80d4Fa28AB4EbA49cF8B",
+    "Swapper": "0x2b4d7ff623ab0a025da30671e2d6e052e99a5f7b",
+    "Genesis Staking": "0x4434Fbeb3d6C58E20a45edB794B2AF8E07D506C3",
+    "Presale": "0x7bf7eA00530545f2060D72cBB4E5555b84cB80AF",
+    "PolygonStake": "0xfA8a2bc09f7594Bdea23796faa3d8554E5300Cba"
+  };
+
+  var bscContractWallets = {
+    "Airdrop Distributor": "0xA2CfD0F2bEa4F23f668474438762e100AbA8aA4a",
+    "TerraForming Stake#1": "0xb9d62ACB4360681d021FeE14357058d52AB6A743",
+    "TerraForming Stake#2": "0xDB6C4b8941A4eEe65E9d93FfdDEF7814Ef9dA856"
+  };
+
+  var bscStakingContracts = {
+  };
+
+  // Define the token addresses
+  var creTokenAddress = '0xe81432473290F4ffCFc5E823F8069Db83e8A677B';  // CRE token address on Polygon
+  var bcreTokenAddress = '0xeec027F0d9A1De829f430b5DFafE9f7ca5Be9c88';  // BCRE token address on BSC
+
+  // Fetch max total supplies
+  var creMaxSupply = fetchMaxTotalSupply(creTokenAddress, 'polygon');
+  var bcreMaxSupply = fetchMaxTotalSupply(bcreTokenAddress, 'bsc');
+  
+  // Function to format numbers with commas
+  function formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  
+  function createLine(name, address, balance, tokenSymbol, isSubtotal = false) {
+    var balanceStr = formatNumber(balance.toFixed(2)) + ' ' + tokenSymbol;
+    
+    if (isSubtotal) {
+      return 'Subtotal:'.padEnd(40) + balanceStr.padStart(20);
+    } else {
+      var truncatedName = name.length > 20 ? name.substring(0, 17) + '...' : name;
+      var formattedAddress = address ? formatWalletAddress(address) : '';
+      return truncatedName.padEnd(20) + ' ' + formattedAddress.padEnd(20) + balanceStr.padStart(30);
+    }
+  }
+
+  function formatWalletAddress(address) {
+    return address.substring(0, 6) + '...' + address.substring(address.length - 4);
+  }
+  
+  function writeWalletBalances(title, wallets, tokenAddress, network, tokenSymbol) {
+    if (title) {
+      var subtitle = body.insertParagraph(insertIndex++, title);
+      subtitle.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+    }
+    
+    // Log the input parameters for debugging
+    Logger.log('writeWalletBalances input:');
+    Logger.log('Title: ' + title);
+    Logger.log('Token Address: ' + tokenAddress);
+    Logger.log('Network: ' + network);
+    Logger.log('Token Symbol: ' + tokenSymbol);
+    
+    if (!wallets || Object.keys(wallets).length === 0) {
+      Logger.log('Error: Empty or undefined wallets object');
+      body.insertParagraph(insertIndex++, 'Error: No wallet addresses provided').setFontColor('#FF0000');
+      return 0;
+    }
+
+    if (!tokenAddress) {
+      Logger.log('Error: Missing token address');
+      body.insertParagraph(insertIndex++, 'Error: Missing token address').setFontColor('#FF0000');
+      return 0;
+    }
+
+    if (!network) {
+      Logger.log('Error: Missing network');
+      body.insertParagraph(insertIndex++, 'Error: Missing network').setFontColor('#FF0000');
+      return 0;
+    }
+    
+    var balances = fetchBalances(Object.values(wallets), tokenAddress, network);
+    var subtotal = 0;
+    
+    Object.entries(wallets).forEach(([name, address], index) => {
+      var balance = balances[index];
+      if (balance === undefined) {
+        Logger.log('Error: Undefined balance for ' + name + ' (' + address + ')');
+        balance = 0;
+      }
+      var line = createLine(name, address, balance, tokenSymbol);
+      body.insertParagraph(insertIndex++, line).setFontFamily("Courier New").setFontSize(10);
+      subtotal += balance;
+    });
+    
+    body.insertHorizontalRule(insertIndex++);
+    body.insertParagraph(insertIndex++, createLine('', '', subtotal, tokenSymbol, true)).setFontFamily("Courier New").setFontSize(10);
+    body.insertHorizontalRule(insertIndex++);
+    
+    return subtotal;
+  }
+  
+  // Write Polygon Network balances
+  var polygonTitle = body.insertParagraph(insertIndex++, 'Polygon Network');
+  polygonTitle.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  
+  Logger.log('Calling writeWalletBalances for Polygon Gnosis Wallets');
+  var gnosisSubtotalPolygon = writeWalletBalances('Gnosis Wallet Balances', gnosisWallets, creTokenAddress, 'polygon', 'CRE');
+  
+  Logger.log('Calling writeWalletBalances for Polygon Contract Wallets');
+  var polygonContractSubtotal = writeWalletBalances('Contract Wallet Balances', polygonContractWallets, creTokenAddress, 'polygon', 'CRE');
+
+  var totalPolygonLockedBalance = gnosisSubtotalPolygon + polygonContractSubtotal;
+
+  body.insertHorizontalRule(insertIndex++);
+  body.insertParagraph(insertIndex++, createLine('Subtotal:', '', totalPolygonLockedBalance, 'CRE', false))
+    .setFontFamily("Courier New").setFontSize(10);
+
+  body.insertHorizontalRule(insertIndex++);
+  body.insertParagraph(insertIndex++, createLine('Total Polygon Locked Bal', '', totalPolygonLockedBalance, 'CRE'))
+    .setFontFamily("Courier New").setFontSize(10);
+  
+  if (creMaxSupply !== null) {
+    body.insertHorizontalRule(insertIndex++);
+    body.insertParagraph(insertIndex++, createLine('Max Total Supply', creTokenAddress, creMaxSupply, 'CRE'))
+      .setFontFamily("Courier New").setFontSize(10);
+
+    // Calculate and display Current Market Supply
+    var currentPolygonMarketSupply = creMaxSupply - totalPolygonLockedBalance;
+    body.insertParagraph(insertIndex++, createLine('Current Market Supply', '', currentPolygonMarketSupply, 'CRE'))
+      .setFontFamily("Courier New").setFontSize(10);
+
+  } else {
+    body.insertParagraph(insertIndex++, 'Failed to fetch Max Total Supply for CRE')
+      .setFontFamily("Courier New").setFontSize(10);
+  }
+  
+  body.insertHorizontalRule(insertIndex++);
+  
+
+  // Write BSC Network balances
+  var bscTitle = body.insertParagraph(insertIndex++, 'BSC Network');
+  bscTitle.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  
+  Logger.log('Calling writeWalletBalances for BSC Gnosis Wallets');
+  var gnosisSubtotalBsc = writeWalletBalances('Gnosis Wallet Balances', gnosisWallets, bcreTokenAddress, 'bsc', 'BCRE');
+  
+  Logger.log('Calling writeWalletBalances for BSC Contract Wallets');
+  var bscContractSubtotal = writeWalletBalances('Contract Wallet Balances', bscContractWallets, bcreTokenAddress, 'bsc', 'BCRE');
+  
+  // Add staking contracts
+  var stakingSubtitle = body.insertParagraph(insertIndex++, 'Staking Contract Balances');
+  stakingSubtitle.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  
+  var totalStaked = 0;
+  for (let [name, address] of Object.entries(bscStakingContracts)) {
+    var stakedAmount = fetchTotalStaked(address, 'bsc');
+    totalStaked += stakedAmount;
+    var line = createLine(name, address, stakedAmount, 'BCRE');
+    body.insertParagraph(insertIndex++, line).setFontFamily("Courier New").setFontSize(10);
+  }
+  
+  body.insertHorizontalRule(insertIndex++);
+  body.insertParagraph(insertIndex++, createLine('Subtotal of Staked Tokens:', '', totalStaked, 'BCRE', true))
+    .setFontFamily("Courier New").setFontSize(10);
+  body.insertHorizontalRule(insertIndex++);
+
+  var totalBscLockedBalance = gnosisSubtotalBsc + bscContractSubtotal;
+  
+  body.insertParagraph(insertIndex++, createLine('Total BSC Locked Bal', '', totalBscLockedBalance, 'BCRE'))
+    .setFontFamily("Courier New").setFontSize(10);
+  
+  if (bcreMaxSupply !== null) {
+    body.insertHorizontalRule(insertIndex++);
+    body.insertParagraph(insertIndex++, createLine('Max Total Supply', bcreTokenAddress, bcreMaxSupply, 'BCRE'))
+      .setFontFamily("Courier New").setFontSize(10);
+    
+    // Calculate and display Current Market Supply
+    var currentMarketSupply = bcreMaxSupply - totalBscLockedBalance;
+    body.insertParagraph(insertIndex++, createLine('Current Market Supply', '', currentMarketSupply, 'BCRE'))
+      .setFontFamily("Courier New").setFontSize(10);
+  } else {
+    body.insertParagraph(insertIndex++, 'Failed to fetch Max Total Supply for BCRE')
+      .setFontFamily("Courier New").setFontSize(10);
+  }
+
+  var unofficialTitle = body.insertParagraph(insertIndex++, 'Unofficial Assets as of ' + dateString + ' ' + timeString);
+  unofficialTitle.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  
+  var polygonSubtitle = body.insertParagraph(insertIndex++, 'Polygon Network');
+  polygonSubtitle.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  body.insertParagraph(insertIndex++, 'No unofficial assets on Polygon Network.');
+  
+  var bscSubtitle = body.insertParagraph(insertIndex++, 'BSC Network');
+  bscSubtitle.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+  
+  // Insert the "Unofficial BSC Gnosis Wallet Balances" heading
+  var bscGnosisSubtitle = body.insertParagraph(insertIndex++, 'Unofficial BSC Gnosis Wallet Balances');
+  bscGnosisSubtitle.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  
+  // Define the unofficial Gnosis wallets for BSC
+  var unofficialBscGnosisWallets = {
+    "Gate1-1": "0x82d7a45ae9cC93ed60Ea7636F65ceEa9af856519",
+    "Gate1-2": "0xF4E2BA8E1f9C18BDB3479858282B0e5743Aa519C",
+    "Gate1-3": "0xC97700187C853B837708BDFF954560366E4B5a0C",
+    "Gate1-4": "0x32CA2CCA4b1a0fbEc977a71df071f9cf0C0E24C9",
+    "Gate1-5": "0x1812885437f50fBF63C05Aa3ff88A077Bc33852",
+    "Gate1-6": "0x28dB51e70e9Fe0521fdF2842e1ee329B56dcf7aB",
+    "Gate1-7": "0xD6A5600d24F04D0271100334332dc44b872AFC85",
+    "Gate1-8": "0x35592d3C607Eb69783D3be96562743C6265F9C4",
+    "Gate1-VL-1": "0x709f0329AEb20Da5732416863EFb7e2971B0bf4A",
+    "Gate1-VL-2": "0x919f36bFd3e2d32293d5c6Baac338e0a76Fb156A"
+  };
+  
+  // Write BSC Network balances for unofficial Gnosis wallets
+  Logger.log('Calling writeWalletBalances for Unofficial BSC Gnosis Wallets');
+  writeWalletBalances('', unofficialBscGnosisWallets, bcreTokenAddress, 'bsc', 'BCRE');
+}
+
+function onOpen() {
+  var ui = DocumentApp.getUi();
+  ui.createMenu('Realtime Assets')
+    .addItem('List Wallet Balances', 'listGnosisWalletBalances')
+    .addToUi();
+}
+
+function createDailyTrigger() {
+  // Delete any existing triggers to avoid duplicates
+  var existingTriggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < existingTriggers.length; i++) {
+    ScriptApp.deleteTrigger(existingTriggers[i]);
+  }
+  
+  // Create a new trigger to run at 12:00 GMT daily
+  ScriptApp.newTrigger('listGnosisWalletBalances')
+    .timeBased()
+    .everyDays(1)
+    .atHour(0)
+    .create();
+  
+  Logger.log('Daily trigger created successfully to run at 12:00 GMT');
+}
+
+// Optional: Function to check existing triggers
+function checkTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    Logger.log('Trigger name: ' + triggers[i].getHandlerFunction());
+    Logger.log('Event type: ' + triggers[i].getEventType());
+    Logger.log('-------');
+  }
+}
+
